@@ -25,10 +25,67 @@ struct {
 } Graph;
 //################ADD Your Implementation Here######################
 
+      // Graph creation and functions
+      void initializeGraph() {
+          for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
+              Graph.adjList[i] = 0;
+              Graph.visited[i] = 0;
+              Graph.recStack[i] = 0;
+          }
+          initlock(&Graph.lock, "graph");
+      }
 
+      int isCyclicUtil(int v) {
+          if (!Graph.visited[v]) {
+              Graph.visited[v] = 1;
+              Graph.recStack[v] = 1;
 
-      //Graph creation and functions
+              Node* temp = Graph.adjList[v];
+              while (temp != 0) {
+                  if (!Graph.visited[temp->vertex] && isCyclicUtil(temp->vertex))
+                      return 1;
+                  else if (Graph.recStack[temp->vertex])
+                      return 1;
+                  temp = temp->next;
+              }
+          }
+          Graph.recStack[v] = 0;
+          return 0;
+      }
 
+      int isCyclic() {
+          for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
+              if (isCyclicUtil(i))
+                  return 1;
+          }
+          return 0;
+      }
+
+      void addEdge(int src, int dest) {
+          Node* newNode = (Node*) kalloc();
+          newNode->vertex = dest;
+          newNode->next = Graph.adjList[src];
+          Graph.adjList[src] = newNode;
+      }
+
+      void removeEdge(int src, int dest) {
+          Node* temp = Graph.adjList[src];
+          Node* prev = 0;
+
+          while (temp != 0) {
+              if (temp->vertex == dest) {
+                  if (prev == 0) {
+                      Graph.adjList[src] = temp->next;
+                  } else {
+                      prev->next = temp->next;
+                  }
+                  kfree(temp);
+                  return;
+              }
+              prev = temp;
+              temp = temp->next;
+          }
+      }
 
 
 //##################################################################
@@ -175,6 +232,22 @@ userinit(void)
 
 
       //Resource page handling and creation
+      
+
+    void* page = kalloc();
+    Resource* resources = (Resource*) page;
+    void* bufferStart = page + 2048;
+
+    for (int i = 0; i < NRESOURCE; i++)
+    {
+      resources[i].resourceid = i;
+      resources[i].name[0] = '0' + i;
+      resources[i].acquired = -1;
+      resources[i].startaddr = bufferStart + i * (2048 / NRESOURCE);
+    }
+    
+
+
 
 
 
