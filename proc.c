@@ -12,6 +12,9 @@ struct {
   struct proc proc[NPROC];
 } ptable;
 
+
+void* adjListPage;  // Pointer to the allocated kernel page for the adjacency list
+
 typedef struct Node {
     int vertex;
     enum nodetype type;
@@ -25,68 +28,178 @@ struct {
 } Graph;
 //################ADD Your Implementation Here######################
 
-      // Graph creation and functions
-      void initializeGraph() {
-          for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
-              Graph.adjList[i] = 0;
-              Graph.visited[i] = 0;
-              Graph.recStack[i] = 0;
-          }
-          initlock(&Graph.lock, "graph");
-      }
+// Function to initialize the graph
+void initializeGraph() {
+    // Allocate a kernel page for the adjacency list
+    adjListPage = kalloc();
+    if (adjListPage == 0) {
+        panic("initializeGraph: kalloc failed");
+    }
 
-      int isCyclicUtil(int v) {
-          if (!Graph.visited[v]) {
-              Graph.visited[v] = 1;
-              Graph.recStack[v] = 1;
+    // Initialize the adjacency list and metadata
+    for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
+        Graph.adjList[i] = 0;  // Set all pointers to NULL
+        Graph.visited[i] = 0;  // Mark all nodes as unvisited
+        Graph.recStack[i] = 0; // Initialize recursion stack
+    }
 
-              Node* temp = Graph.adjList[v];
-              while (temp != 0) {
-                  if (!Graph.visited[temp->vertex] && isCyclicUtil(temp->vertex))
-                      return 1;
-                  else if (Graph.recStack[temp->vertex])
-                      return 1;
-                  temp = temp->next;
-              }
-          }
-          Graph.recStack[v] = 0;
-          return 0;
-      }
+    // Initialize the spinlock
+    initlock(&Graph.lock, "graph_lock");
+}
 
-      int isCyclic() {
-          for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
-              if (isCyclicUtil(i))
-                  return 1;
-          }
-          return 0;
-      }
+// Function to add a thread node to the graph
+void addThreadNode(int tid) {
 
-      void addEdge(int src, int dest) {
-          Node* newNode = (Node*) kalloc();
-          newNode->vertex = dest;
-          newNode->next = Graph.adjList[src];
-          Graph.adjList[src] = newNode;
-      }
+    acquire(&Graph.lock);  // Acquire the graph lock for thread safety
 
-      void removeEdge(int src, int dest) {
-          Node* temp = Graph.adjList[src];
-          Node* prev = 0;
+    // Find an available slot in the adjacency list page
+    Node* newNode = (Node*)adjListPage;
+    while (newNode->vertex != 0) {  // Find an unused Node struct
+        newNode++;
+    }
 
-          while (temp != 0) {
-              if (temp->vertex == dest) {
-                  if (prev == 0) {
-                      Graph.adjList[src] = temp->next;
-                  } else {
-                      prev->next = temp->next;
-                  }
-                  kfree(temp);
-                  return;
-              }
-              prev = temp;
-              temp = temp->next;
-          }
-      }
+    // Initialize the new node
+    newNode->vertex = tid;
+    newNode->type = PROCESS;
+    newNode->next = 0;
 
+    // Add the node to the end of the linked list for the thread partition
+    if (Graph.adjList[tid] == 0) {
+        Graph.adjList[tid] = newNode;  // If the list is empty, set the head
+    } else {
+        Node* temp = Graph.adjList[tid];
+        while (temp->next != 0) {
+            temp = temp->next;
+        }
+        temp->next = newNode;  // Add the new node to the end of the list
+    }
+
+    release(&Graph.lock);  // Release the graph lock
+}
+
+// Function to remove a thread node from the graph
+void removeThreadNode(int tid) {
+    acquire(&Graph.lock);  // Acquire the graph lock for thread safety
+
+    // Remove the thread node from the adjacency list
+    Node* temp = Graph.adjList[tid];
+    Node* prev = 0;
+
+    while (temp != 0) {
+        if (temp->vertex == tid) {
+            // Remove the node from the linked list
+            if (prev == 0) {
+                Graph.adjList[tid] = temp->next;  // Update the head pointer
+            } else {
+                prev->next = temp->next;          // Bypass the node to remove
+            }
+
+            // Mark the node as unused
+            temp->vertex = 0;
+            temp->next = 0;
+            break;
+        }
+        prev = temp;
+        temp = temp->next;
+    }
+
+    // Release any resources held by the thread
+    for (int i = MAXTHREAD; i < MAXTHREAD + NRESOURCE; i++) {
+        removeEdge(i, tid);  // Remove holding edges from resources to the thread
+    }
+
+    release(&Graph.lock);  // Release the graph lock
+}
+
+// Function to add an edge to the graph
+void addEdge(int src, int dest) {
+    acquire(&Graph.lock);  // Acquire the graph lock for thread safety
+
+    // Find an available slot in the adjacency list page
+    Node* newNode = (Node*)adjListPage;
+    while (newNode->vertex != 0) {  // Find an unused Node struct
+        newNode++;
+    }
+
+    // Initialize the new node
+    newNode->vertex = dest;                // Set the destination vertex
+    newNode->next = Graph.adjList[src];    // Insert at the head of the linked list
+    Graph.adjList[src] = newNode;          // Update the head pointer
+
+    release(&Graph.lock);  // Release the graph lock
+}
+
+// Function to remove an edge from the graph
+void removeEdge(int src, int dest) {
+    acquire(&Graph.lock);  // Acquire the graph lock for thread safety
+
+    Node* temp = Graph.adjList[src];
+    Node* prev = 0;
+
+    // Traverse the linked list to find the node to remove
+    while (temp != 0) {
+        if (temp->vertex == dest) {
+            // Remove the node from the linked list
+            if (prev == 0) {
+                Graph.adjList[src] = temp->next;  // Update the head pointer
+            } else {
+                prev->next = temp->next;          // Bypass the node to remove
+            }
+
+            // Mark the node as unused
+            temp->vertex = 0;
+            temp->next = 0;
+            break;
+        }
+        prev = temp;
+        temp = temp->next;
+    }
+
+    release(&Graph.lock);  // Release the graph lock
+}
+
+// Recursive DFS function to detect cycles
+int isCyclicUtil(int v) {
+    if (!Graph.visited[v]) {
+        Graph.visited[v] = 1;
+        Graph.recStack[v] = 1;
+
+        // Traverse the adjacency list of the current node
+        Node* temp = Graph.adjList[v];
+        while (temp != 0) {
+            if (!Graph.visited[temp->vertex] && isCyclicUtil(temp->vertex))
+                return 1;  // Cycle detected
+            else if (Graph.recStack[temp->vertex])
+                return 1;  // Cycle detected
+            temp = temp->next;
+        }
+    }
+    Graph.recStack[v] = 0;  // Remove the node from the recursion stack
+    return 0;  // No cycle detected
+}
+
+// Function to detect deadlocks
+int isCyclic() {
+    acquire(&Graph.lock);  // Acquire the graph lock for thread safety
+
+    // Reset visited and recStack arrays
+    for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
+        Graph.visited[i] = 0;
+        Graph.recStack[i] = 0;
+    }
+
+    // Perform DFS on each node
+    int result = 0;
+    for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
+        if (isCyclicUtil(i)) {
+            result = 1;  // Cycle detected
+            break;
+        }
+    }
+
+    release(&Graph.lock);  // Release the graph lock
+    return result;
+}
 
 //##################################################################
 
@@ -675,56 +788,53 @@ int clone(void (*worker)(void*,void*),void* arg1,void* arg2,void* stack)
   acquire(&ptable.lock);
   New_Thread->state=RUNNABLE;
   release(&ptable.lock);
+  //add node of new thread to graph
+  addThreadNode(New_Thread->pid);
+
   //cprintf("process running Clone has  %d threads\n",curproc->Thread_Num);  
   return New_Thread->tid;
 }
-int join(int Thread_id)
-{
-  struct proc  *p,*curproc=myproc();
-  int Join_Thread_Exit=0,jtid;
-  if(Thread_id==0)
-     return -1;
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->tid == Thread_id && p->parent == curproc) {
-      Join_Thread_Exit=1; 
-      break;
+int join(int Thread_id) {
+    struct proc *p, *curproc = myproc();
+    int Join_Thread_Exit = 0, jtid;
+    if (Thread_id == 0)
+        return -1;
+    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+        if (p->tid == Thread_id && p->parent == curproc) {
+            Join_Thread_Exit = 1;
+            break;
+        }
     }
-  }
-  if(!Join_Thread_Exit || curproc->killed){
-    //cprintf("Herere");
-    return -1;
-  }  
-  acquire(&ptable.lock);
-  for(;;){
-    // thread is killed by some other thread in group
-    //cprintf("I am waiting\n");
-    if(curproc->killed){
-      release(&ptable.lock);
-      return -1;
+    if (!Join_Thread_Exit || curproc->killed) {
+        return -1;
     }
-    if(p->state == ZOMBIE){
-      // Found the thread 
-      curproc->Thread_Num--;
-      jtid = p->tid;
-      kfree(p->kstack);
-      p->kstack = 0;
-      p->pgdir = 0;
-      p->pid = 0;
-      p->tid = 0;
-      p->tstack = 0;
-      p->parent = 0;
-      p->name[0] = 0;
-      p->killed = 0;
-      p->state = UNUSED;
-      release(&ptable.lock);
-      //cprintf("Parent has  %d threads\n",curproc->Thread_Num);
-      return jtid;
-    } 
-
-    sleep(curproc, &ptable.lock);  
-  }     
-  //curproc->Thread_Num--;
-  return 0;
+    acquire(&ptable.lock);
+    for (;;) {
+        if (curproc->killed) {
+            release(&ptable.lock);
+            return -1;
+        }
+        if (p->state == ZOMBIE) {
+            //remove the related node of thread in the graph
+            removeThreadNode(Thread_id);
+            curproc->Thread_Num--;
+            jtid = p->tid;
+            kfree(p->kstack);
+            p->kstack = 0;
+            p->pgdir = 0;
+            p->pid = 0;
+            p->tid = 0;
+            p->tstack = 0;
+            p->parent = 0;
+            p->name[0] = 0;
+            p->killed = 0;
+            p->state = UNUSED;
+            release(&ptable.lock);
+            return jtid;
+        }
+        sleep(curproc, &ptable.lock);
+    }
+    return 0;
 }
 
 //PAGEBREAK: 36
@@ -764,20 +874,50 @@ procdump(void)
   }
 }
 
-int requestresource(int Resource_ID)
-{
-//################ADD Your Implementation Here######################
+int requestresource(int Resource_ID) {
+    struct proc* curproc = myproc();
+    int tid = curproc->tid;
 
-//##################################################################
-return -1;
-}
-int releaseresource(int Resource_ID)
-{
-  //################ADD Your Implementation Here######################
+    // Acquire the graph lock to ensure thread-safe access
+    acquire(&Graph.lock);
 
-//##################################################################
-  return -1;
+    // Add an edge from the thread to the resource (request edge)
+    addEdge(tid, Resource_ID);
+
+    // Check for deadlock using DFS
+    if (isCyclic()) {
+        // Deadlock detected, remove the edge and return an error
+        removeEdge(tid, Resource_ID);
+        release(&Graph.lock);
+        cprintf("Thread %d failed to acquire resource %d (deadlock detected)\n", tid, Resource_ID);
+        return -1; // Deadlock detected
+    }
+
+    // No deadlock detected, allow the resource request
+    release(&Graph.lock);
+    cprintf("Thread %d successfully acquired resource %d\n", tid, Resource_ID);
+    return 0; // Resource requested successfully
 }
+
+
+int releaseresource(int Resource_ID) {
+    struct proc* curproc = myproc();
+    int tid = curproc->tid;
+
+    // Acquire the graph lock to ensure thread-safe access
+    acquire(&Graph.lock);
+
+    // Remove the edge from the thread to the resource
+    removeEdge(tid, Resource_ID);
+
+    // Release the graph lock
+    release(&Graph.lock);
+
+    cprintf("Thread %d successfully released resource %d\n", tid, Resource_ID);
+    return 0; // Resource released successfully
+}
+
+
 int writeresource(int Resource_ID,void* buffer,int offset, int size)
 {
 //################ADD Your Implementation Here######################
