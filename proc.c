@@ -47,6 +47,18 @@ void initializeGraph() {
     initlock(&Graph.lock, "graph_lock");
 }
 
+// Function to find a node with a specific vertex in adjListPage
+Node* findNode(int vertex) {
+    Node* node = (Node*)adjListPage;
+    for (int i = 0; i < (PGSIZE / sizeof(Node)); i++) {
+        if (node->vertex == vertex) {
+            return node;  // Return the node if the vertex is found
+        }
+        node++;
+    }
+    return 0;  // Return NULL if the vertex is not found
+}
+
 // Function to add a thread node to the graph
 void addThreadNode(int tid) {
 
@@ -64,20 +76,11 @@ void addThreadNode(int tid) {
     newNode->next = 0;
 
     // Add the node to the end of the linked list for the thread partition
-    if (Graph.adjList[tid] == 0) {
-        Graph.adjList[tid] = newNode;  // If the list is empty, set the head
-    } else {
-        Node* temp = Graph.adjList[tid];
-        while (temp->next != 0) {
-            temp = temp->next;
-        }
-        temp->next = newNode;  // Add the new node to the end of the list
-    }
+    Graph.adjList[NRESOURCE+tid] = 0;
 
     release(&Graph.lock);  // Release the graph lock
 }
 
-// Function to remove a thread node from the graph
 void removeThreadNode(int tid) {
     acquire(&Graph.lock);  // Acquire the graph lock for thread safety
 
@@ -85,6 +88,7 @@ void removeThreadNode(int tid) {
     Node* temp = Graph.adjList[tid];
     Node* prev = 0;
 
+    // Traverse the linked list to find the node to remove
     while (temp != 0) {
         if (temp->vertex == tid) {
             // Remove the node from the linked list
@@ -94,7 +98,7 @@ void removeThreadNode(int tid) {
                 prev->next = temp->next;          // Bypass the node to remove
             }
 
-            // Mark the node as unused
+            // Mark the node as unused in adjListPage
             temp->vertex = 0;
             temp->next = 0;
             break;
@@ -104,27 +108,55 @@ void removeThreadNode(int tid) {
     }
 
     // Release any resources held by the thread
-    for (int i = MAXTHREAD; i < MAXTHREAD + NRESOURCE; i++) {
-        removeEdge(i, tid);  // Remove holding edges from resources to the thread
+    for (int i = NRESOURCE; i < MAXTHREAD + NRESOURCE; i++) {
+        // Check if the resource is allocated to the thread
+        if (Graph.adjList[i] != 0 && Graph.adjList[i]->vertex == tid) {
+            // Remove the edge from the resource to the thread
+            removeEdge(i, tid);
+
+            // Mark the resource as free
+            Resource* resources = (Resource*)(adjListPage + 2048);  // Resource metadata starts at offset 2048
+            resources[i - NRESOURCE].acquired = -1;  // Mark the resource as free
+        }
     }
+
+    // Update the adjacency list for the thread
+    Graph.adjList[tid] = 0;  // Set the adjacency list for the thread to NULL
 
     release(&Graph.lock);  // Release the graph lock
 }
 
-// Function to add an edge to the graph
 void addEdge(int src, int dest) {
     acquire(&Graph.lock);  // Acquire the graph lock for thread safety
 
-    // Find an available slot in the adjacency list page
-    Node* newNode = (Node*)adjListPage;
-    while (newNode->vertex != 0) {  // Find an unused Node struct
-        newNode++;
+    // Find the destination node in adjListPage
+    Node* destNode = findNode(dest);
+    if (destNode == 0) {
+        // If the destination node does not exist, return (we cannot add an edge to a non-existent node)
+        release(&Graph.lock);
+        return;
     }
 
-    // Initialize the new node
-    newNode->vertex = dest;                // Set the destination vertex
-    newNode->next = Graph.adjList[src];    // Insert at the head of the linked list
-    Graph.adjList[src] = newNode;          // Update the head pointer
+    // Check the type of the source node
+    Node* srcNode = findNode(src);
+    if (srcNode == 0) {
+        // If the source node does not exist, return (we cannot add an edge from a non-existent node)
+        release(&Graph.lock);
+        return;
+    }
+
+    // If the source node is a RESOURCE, ensure it has no outgoing edges
+    if (srcNode->type == RESOURCE) {
+        if (Graph.adjList[src] != 0) {
+            // Resource already has an outgoing edge, so we cannot add another one
+            release(&Graph.lock);
+            return;
+        }
+    }
+
+    // Add the destination node to the adjacency list of the source vertex
+    // destNode->next = Graph.adjList[src];  // Insert at the head of the linked list
+    Graph.adjList[src] = destNode;        // Update the head pointer
 
     release(&Graph.lock);  // Release the graph lock
 }
@@ -134,27 +166,13 @@ void removeEdge(int src, int dest) {
     acquire(&Graph.lock);  // Acquire the graph lock for thread safety
 
     Node* temp = Graph.adjList[src];
-    Node* prev = 0;
-
     // Traverse the linked list to find the node to remove
-    while (temp != 0) {
+    if (temp != 0) {
         if (temp->vertex == dest) {
             // Remove the node from the linked list
-            if (prev == 0) {
-                Graph.adjList[src] = temp->next;  // Update the head pointer
-            } else {
-                prev->next = temp->next;          // Bypass the node to remove
-            }
-
-            // Mark the node as unused
-            temp->vertex = 0;
-            temp->next = 0;
-            break;
+            Graph.adjList[src] = 0;  // Update the head pointer
         }
-        prev = temp;
-        temp = temp->next;
     }
-
     release(&Graph.lock);  // Release the graph lock
 }
 
