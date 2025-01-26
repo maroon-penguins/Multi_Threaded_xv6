@@ -936,19 +936,23 @@ procdump(void)
 }
 
 int requestresource(int Resource_ID) {
-    cprintf("in the request fun\n");
     struct proc* curproc = myproc();
     int tid = curproc->tid;
 
-    cprintf("before addedge\n");
     // Acquire the graph lock to ensure thread-safe access
     // acquire(&Graph.lock);
     
-    cprintf("before addedge\n");
     // Add an edge from the thread to the resource (request edge)
+
+    Node* node = findNode(Resource_ID);
+    if (node == 0 && node->type != RESOURCE) {
+        // release(&Graph.lock);
+        cprintf("the resource does not found !\n");
+        return 1; // It is a resource node
+    }
+
     addEdge(tid, Resource_ID);
 
-    cprintf("before checkcycle\n");
     // Check for deadlock using DFS
     if (isCyclic()) {
         // Deadlock detected, remove the edge and return an error
@@ -973,6 +977,7 @@ int releaseresource(int Resource_ID) {
     // acquire(&Graph.lock);
 
     // Remove the edge from the thread to the resource
+
     removeEdge(tid, Resource_ID);
 
     // Release the graph lock
