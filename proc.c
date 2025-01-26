@@ -408,6 +408,10 @@ userinit(void)
       resources[i].name[0] = '0' + i;
       resources[i].acquired = -1;
       resources[i].startaddr = bufferStart + i * (2048 / NRESOURCE);
+    }
+    initializeGraph();
+    for(int i =0 ; i<NRESOURCE ; i++)
+    {
       addResourceNode(i);
     }
     
