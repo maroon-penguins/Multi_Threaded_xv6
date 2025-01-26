@@ -47,6 +47,28 @@ void initializeGraph() {
     initlock(&Graph.lock, "graph_lock");
 }
 
+void addResourceNode(int resource_id) {
+    acquire(&Graph.lock);  // Acquire the graph lock for thread safety
+
+    // Find an available slot in the adjacency list page
+    Node* newNode = (Node*)adjListPage;
+    while (newNode->vertex != 0) {  // Find an unused Node struct
+        newNode++;
+    }
+
+    // Initialize the new node
+    newNode->vertex = resource_id;
+    newNode->type = RESOURCE;
+    newNode->next = 0;
+
+    // Add the node to the adjacency list for the resource
+    Graph.adjList[resource_id] = newNode;
+
+    cprintf("Added resource node for resource %d\n", resource_id);
+
+    release(&Graph.lock);  // Release the graph lock
+}
+
 // Function to find a node with a specific vertex in adjListPage
 Node* findNode(int vertex) {
     Node* node = (Node*)adjListPage;
@@ -81,30 +103,52 @@ void addThreadNode(int tid) {
     release(&Graph.lock);  // Release the graph lock
 }
 
+// Function to remove an edge from the graph
+void removeEdge(int src, int dest) {
+    acquire(&Graph.lock);  // Acquire the graph lock for thread safety
+
+    Node* temp = Graph.adjList[src];
+    // Traverse the linked list to find the node to remove
+    if (temp != 0) {
+        if (temp->vertex == dest) {
+            // Remove the node from the linked list
+            Graph.adjList[src] = 0;  // Update the head pointer
+        }
+    }
+    release(&Graph.lock);  // Release the graph lock
+}
+
+
+//this func need to be change
 void removeThreadNode(int tid) {
     acquire(&Graph.lock);  // Acquire the graph lock for thread safety
 
     // Remove the thread node from the adjacency list
+    
+    Node* node = (Node*)adjListPage;
+    for (int i = 0; i < (PGSIZE / sizeof(Node)); i++) {
+        if (node->vertex == tid) {
+            // Mark the node as unused
+            node->vertex = 0;  // Reset the vertex ID to indicate the node is unused
+            node->next = 0;    // Reset the next pointer
+
+            // Debug print
+            cprintf("Removed and marked thread node for thread %d as unused\n", tid);
+            break;  // Exit the loop once the node is found and marked
+        }
+        node++;  // Move to the next node in adjListPage
+    }
+
     Node* temp = Graph.adjList[tid];
-    Node* prev = 0;
 
     // Traverse the linked list to find the node to remove
-    while (temp != 0) {
-        if (temp->vertex == tid) {
-            // Remove the node from the linked list
-            if (prev == 0) {
-                Graph.adjList[tid] = temp->next;  // Update the head pointer
-            } else {
-                prev->next = temp->next;          // Bypass the node to remove
-            }
+    if (temp != 0) {
+        // Mark the node as unused in adjListPage
+        temp->vertex = 0;  // Reset the vertex ID to indicate the node is unused
+        temp->next = 0;    // Reset the next pointer
 
-            // Mark the node as unused in adjListPage
-            temp->vertex = 0;
-            temp->next = 0;
-            break;
-        }
-        prev = temp;
-        temp = temp->next;
+        // Update the adjacency list for the thread
+        Graph.adjList[tid] = 0;  // Set the adjacency list for the thread to NULL
     }
 
     // Release any resources held by the thread
@@ -119,9 +163,6 @@ void removeThreadNode(int tid) {
             resources[i - NRESOURCE].acquired = -1;  // Mark the resource as free
         }
     }
-
-    // Update the adjacency list for the thread
-    Graph.adjList[tid] = 0;  // Set the adjacency list for the thread to NULL
 
     release(&Graph.lock);  // Release the graph lock
 }
@@ -153,26 +194,19 @@ void addEdge(int src, int dest) {
             return;
         }
     }
+    if(srcNode->type == RESOURCE)
+    {
+      // If the edge is from a resource to a thread, mark the resource as acquired
+      Resource* resources = (Resource*)(adjListPage + 2048);  // Resource metadata starts at offset 2048
+      resources[src].acquired = 1;  // Mark the resource as acquired
+      cprintf("Resource %d is marked as acquired (edge from resource to thread)\n", src);
+    }
 
+    // Debug print
     // Add the destination node to the adjacency list of the source vertex
     // destNode->next = Graph.adjList[src];  // Insert at the head of the linked list
     Graph.adjList[src] = destNode;        // Update the head pointer
 
-    release(&Graph.lock);  // Release the graph lock
-}
-
-// Function to remove an edge from the graph
-void removeEdge(int src, int dest) {
-    acquire(&Graph.lock);  // Acquire the graph lock for thread safety
-
-    Node* temp = Graph.adjList[src];
-    // Traverse the linked list to find the node to remove
-    if (temp != 0) {
-        if (temp->vertex == dest) {
-            // Remove the node from the linked list
-            Graph.adjList[src] = 0;  // Update the head pointer
-        }
-    }
     release(&Graph.lock);  // Release the graph lock
 }
 
@@ -361,7 +395,6 @@ userinit(void)
 //################ADD Your Implementation Here######################
 
 
-
       //Resource page handling and creation
       
 
@@ -375,12 +408,9 @@ userinit(void)
       resources[i].name[0] = '0' + i;
       resources[i].acquired = -1;
       resources[i].startaddr = bufferStart + i * (2048 / NRESOURCE);
+      addResourceNode(i);
     }
     
-
-
-
-
 
 //##################################################################
   acquire(&ptable.lock);
