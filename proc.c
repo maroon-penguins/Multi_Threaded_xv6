@@ -33,12 +33,11 @@ void initializeGraph() {
     // Allocate a kernel page for the adjacency list
     adjListPage = kalloc();
     
-    memset(adjListPage, 0, PGSIZE);
-
-
     if (adjListPage == 0) {
-        panic("initializeGraph: kalloc failed");
+      panic("initializeGraph: kalloc failed");
     }
+    memset(adjListPage, -1, PGSIZE);
+
 
     // Initialize the adjacency list and metadata
     for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
@@ -52,11 +51,12 @@ void initializeGraph() {
 }
 
 void addResourceNode(int resource_id) {
-    acquire(&Graph.lock);  // Acquire the graph lock for thread safety
+    // acquire(&Graph.lock);  // Acquire the graph lock for thread safety
 
     // Find an available slot in the adjacency list page
     Node* newNode = (Node*)adjListPage;
-    while (newNode->vertex != 0) {  // Find an unused Node struct
+    while (newNode->vertex != -1) {  // Find an unused Node struct
+        cprintf("i am searching for free space %d\n",newNode->vertex);
         newNode++;
     }
 
@@ -70,7 +70,7 @@ void addResourceNode(int resource_id) {
 
     cprintf("Added resource node for resource %d\n", resource_id);
 
-    release(&Graph.lock);  // Release the graph lock
+    // release(&Graph.lock);  // Release the graph lock
 }
 
 // Function to find a node with a specific vertex in adjListPage
@@ -103,6 +103,8 @@ void addThreadNode(int tid) {
 
     // Add the node to the end of the linked list for the thread partition
     Graph.adjList[NRESOURCE+tid] = 0;
+
+    cprintf("Node created for thread succesfully\n", tid);
 
     release(&Graph.lock);  // Release the graph lock
 }
@@ -934,15 +936,19 @@ procdump(void)
 }
 
 int requestresource(int Resource_ID) {
+    cprintf("in the request fun\n");
     struct proc* curproc = myproc();
     int tid = curproc->tid;
 
+    cprintf("before addedge\n");
     // Acquire the graph lock to ensure thread-safe access
-    acquire(&Graph.lock);
-
+    // acquire(&Graph.lock);
+    
+    cprintf("before addedge\n");
     // Add an edge from the thread to the resource (request edge)
     addEdge(tid, Resource_ID);
 
+    cprintf("before checkcycle\n");
     // Check for deadlock using DFS
     if (isCyclic()) {
         // Deadlock detected, remove the edge and return an error
@@ -953,7 +959,7 @@ int requestresource(int Resource_ID) {
     }
 
     // No deadlock detected, allow the resource request
-    release(&Graph.lock);
+    // release(&Graph.lock);
     cprintf("Thread %d successfully acquired resource %d\n", tid, Resource_ID);
     return 0; // Resource requested successfully
 }
@@ -964,13 +970,13 @@ int releaseresource(int Resource_ID) {
     int tid = curproc->tid;
 
     // Acquire the graph lock to ensure thread-safe access
-    acquire(&Graph.lock);
+    // acquire(&Graph.lock);
 
     // Remove the edge from the thread to the resource
     removeEdge(tid, Resource_ID);
 
     // Release the graph lock
-    release(&Graph.lock);
+    // release(&Graph.lock);
 
     cprintf("Thread %d successfully released resource %d\n", tid, Resource_ID);
     return 0; // Resource released successfully
