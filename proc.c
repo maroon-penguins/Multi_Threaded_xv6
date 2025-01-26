@@ -32,6 +32,10 @@ struct {
 void initializeGraph() {
     // Allocate a kernel page for the adjacency list
     adjListPage = kalloc();
+    
+    memset(adjListPage, 0, PGSIZE);
+
+
     if (adjListPage == 0) {
         panic("initializeGraph: kalloc failed");
     }
@@ -62,7 +66,7 @@ void addResourceNode(int resource_id) {
     newNode->next = 0;
 
     // Add the node to the adjacency list for the resource
-    Graph.adjList[resource_id] = newNode;
+    Graph.adjList[resource_id] = 0;
 
     cprintf("Added resource node for resource %d\n", resource_id);
 
@@ -422,6 +426,7 @@ userinit(void)
   p->state = RUNNABLE;
 
   release(&ptable.lock);
+  cprintf("i done this part\n");
 }
 
 // Grow current process's memory by n bytes.
@@ -841,6 +846,7 @@ int clone(void (*worker)(void*,void*),void* arg1,void* arg2,void* stack)
   New_Thread->state=RUNNABLE;
   release(&ptable.lock);
   //add node of new thread to graph
+  cprintf("i am here in the clone \n");
   addThreadNode(New_Thread->pid);
 
   //cprintf("process running Clone has  %d threads\n",curproc->Thread_Num);  
@@ -868,6 +874,7 @@ int join(int Thread_id) {
         }
         if (p->state == ZOMBIE) {
             //remove the related node of thread in the graph
+            cprintf("i am in the join part to test \n");
             removeThreadNode(Thread_id);
             curproc->Thread_Num--;
             jtid = p->tid;
