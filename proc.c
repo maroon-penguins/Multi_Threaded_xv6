@@ -39,16 +39,16 @@ void addResourceNode(int resource_id) {
 }
 
 void addThreadNode(int tid) {
-    Node* newNode = (Node*)kalloc();
-    
-    
-    newNode->vertex = tid;
-    newNode->type = PROCESS;
-    newNode->next = 0;
+  Node* newNode = (Node*)kalloc();
   
-    graph->adjList[NRESOURCE + tid] = newNode;
+  
+  newNode->vertex = tid;
+  newNode->type = PROCESS;
+  newNode->next = 0;
 
-    cprintf("Node created for thread %d\n", tid);
+  graph->adjList[NRESOURCE + tid] = newNode;
+
+  cprintf("Node created for thread %d\n", tid);
 }
 
 void initializeGraph(void) {

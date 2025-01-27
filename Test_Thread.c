@@ -12,7 +12,7 @@
 // }
 // int main(){
 //     void* x=0;
-//     printf(0,"TEST : NEW SYSCALLS %d %d %d %d", READ(3,4,4,x),WRITE(3,x,4,4),REQUEST(3),RELEASE(3));   
+//     printf(0,"TEST : NEW SYSCALLS %d %d %d %d", READ(4,4,4,x),WRITE(4,x,4,4),REQUEST(3),RELEASE(3));   
 //     int l=3;
 //     int* size=&l;
 //     int list[3];
@@ -33,54 +33,69 @@
 
 
 /////////////////////////////////////////////////////////////////////
-
-
 #include "types.h"
 #include "user.h"
 #include "stat.h"
 
 void f1(void* arg1, void* arg2) {
+    
     if (requestresource(0) < 0)
+        printf(1, "fails!\n");
+    else 
     {
-        cprintf("Failes\n");
-    } else {
-        cprintf("T1 gets resource 0\n");
-        int dummyCnt1 = 0;
-        while (++dummyCnt1 < 10000000)
+        printf(1, "T1 gets resource 0\n");
+        // sleep(100);
+        for (int i = 0; i < 1000000; i++)
+        {
             continue;
+        }
     }
-    cprintf("T1 requesting for resource 1\n");
-    if (requestresource(1) < 0) {
-        cprintf("Failed\n");
-    } else {
-        cprintf("T1 gets resource 1\n");
-        int dummyCnt2 = 0;
-        while (++dummyCnt2 < 10000000)
+    
+    
+    if (requestresource(1) < 0)
+    {
+        printf(1, "Failed\n");
+    } 
+    else
+    {
+        printf(1, "T1 gets resource 1\n");
+        // sleep(100);
+        for (int i = 0; i < 1000000; i++)
+        {
             continue;
+        }
     }
     exit();
 }
 
 void f2(void* arg1, void* arg2) {
-
     if (requestresource(1) < 0)
+        printf(1, "fails!\n");
+    else
     {
-        cprintf("Failed\n");
-    } else {
-        cprintf("T2 gets resource 1\n");
-        int dummyCnt1 = 0;
-        while (++dummyCnt1 < 10000000)
+        printf(1, "T2 gets resource 1\n");
+        // sleep(100);
+        for (int i = 0; i < 1000000; i++)
+        {
             continue;
+        }
         
     }
-    printf(1, "T2 requests for resource 0\n");
-    if (requestresource(0) < 0) {
-        cprintf("failed!\n");
-    } else {
+    
+
+    if (requestresource(0) < 0)
+    {
+        printf(1, "Failed!\n");
+    }
+    else
+    {
         printf(1, "T2 gets resource 0\n");
-        int dummyCnt2 = 0;
-        while (++dummyCnt2 < 10000000)
+        // sleep(100);
+        for (int i = 0; i < 1000000; i++)
+        {
             continue;
+        }
+        
     }
     exit();
 }
@@ -89,10 +104,8 @@ void f2(void* arg1, void* arg2) {
 int main() {
     thread_create(&f1, 0, 0);
     thread_create(&f2, 0, 0);
-    
+
     join(1);
     join(2);
-
-
     exit();
 }
