@@ -50,14 +50,27 @@ void initializeGraph() {
     initlock(&Graph.lock, "graph_lock");
 }
 
+
+// Function to get a free node slot
+Node* getUnusedNode() {
+    Node* nodes = (Node*)adjListPage;
+    int maxNodes = PGSIZE / sizeof(Node);
+    
+    for (int i = 0; i < maxNodes; i++) {
+        if (nodes[i].vertex == -1) {
+            return &nodes[i];
+        }
+    }
+    return 0;  // No free slots available
+}
+
 void addResourceNode(int resource_id) {
     // acquire(&Graph.lock);  // Acquire the graph lock for thread safety
 
-    // Find an available slot in the adjacency list page
-    Node* newNode = (Node*)adjListPage;
-    while (newNode->vertex != -1) {  // Find an unused Node struct
-        cprintf("i am searching for free space %d\n",newNode->vertex);
-        newNode++;
+    Node* newNode = getUnusedNode();
+    if (newNode == 0) {
+        cprintf("Failed to allocate resource node: no free space\n");
+        return;
     }
 
     // Initialize the new node
@@ -74,33 +87,36 @@ void addResourceNode(int resource_id) {
 }
 
 // Function to find a node with a specific vertex in adjListPage
-Node* findNode(Node* target ) {
-
-  // acquire(&Graph.lock);  // Acquire the graph lock for thread safety
-  cprintf("i am in the find node func \n");
-  Node* node = (Node*)adjListPage;
-  while(node !=0 )
-  {
-    if (node->vertex == target->vertex && node->type == target->type && node->next == target->next)
-    {
-      // release(&Graph.lock);  // Release the graph lock
-      return node ; 
+Node* findNode(Node* target) {
+    Node* node = (Node*)adjListPage;
+    int maxNodes = PGSIZE / sizeof(Node);
+    
+    for (int i = 0; i < maxNodes; i++) {
+        if (node[i].vertex == -1) {
+            break;
+        }
+        
+        // Only compare vertex and type, not the next pointer
+        if (node[i].vertex == target->vertex && 
+            node[i].type == target->type) {
+            cprintf("Node Found");
+            return &node[i];
+        }
     }
-    node++;
-  }
-  // release(&Graph.lock);  // Release the graph lock
-  return 0;  // Return NULL if the vertex is not found
+
+
+    cprintf("Node NOT Found");
+
+    // Node not found
+    return 0;
 }
 
 // Function to add a thread node to the graph
 void addThreadNode(int tid) {
-
-    // acquire(&Graph.lock);  // Acquire the graph lock for thread safety
-
-    // Find an available slot in the adjacency list page
-    Node* newNode = (Node*)adjListPage;
-    while (newNode->vertex != 0) {  // Find an unused Node struct
-        newNode++;
+    Node* newNode = getUnusedNode();
+    if (newNode == 0) {
+        cprintf("Failed to allocate thread node: no free space\n");
+        return;
     }
 
     // Initialize the new node
@@ -166,6 +182,7 @@ void removeThreadNode(int tid) {
     
     Node threadTarget = {tid, PROCESS, 0};   // Thread node
     Node* threadNode = findNode(&threadTarget);
+
 
     for (int i = NRESOURCE; i < MAXTHREAD + NRESOURCE; i++) {
         if (Graph.adjList[i] != 0 && Graph.adjList[i]->vertex == tid) {
@@ -864,8 +881,8 @@ int clone(void (*worker)(void*,void*),void* arg1,void* arg2,void* stack)
   New_Thread->state=RUNNABLE;
   release(&ptable.lock);
   //add node of new thread to graph
-  cprintf("i am here in the clone \n");
-  addThreadNode(New_Thread->pid);
+  addThreadNode(New_Thread->tid);
+  cprintf("Cloned successfully\n");
 
   //cprintf("process running Clone has  %d threads\n",curproc->Thread_Num);  
   return New_Thread->tid;
@@ -894,6 +911,8 @@ int join(int Thread_id) {
             //remove the related node of thread in the graph
             cprintf("i am in the join part to test \n");
             removeThreadNode(Thread_id);
+            cprintf("also did this \n");
+
             curproc->Thread_Num--;
             jtid = p->tid;
             kfree(p->kstack);
