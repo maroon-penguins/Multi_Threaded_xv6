@@ -935,6 +935,7 @@ int join(int Thread_id) {
     if (!Join_Thread_Exit || curproc->killed) {
         return -1;
     }
+
     acquire(&ptable.lock);
     for (;;) {
         if (curproc->killed) {
@@ -1112,17 +1113,99 @@ int releaseresource(int Resource_ID) {
     return 0; // Resource released successfully
 }
 
-int writeresource(int Resource_ID,void* buffer,int offset, int size)
-{
-//################ADD Your Implementation Here######################
+int writeresource(int Resource_ID, void* buffer, int offset, int size) {
+    struct proc* curproc = myproc();
+    int tid = curproc->tid;
 
-//##################################################################
-  return -1;
+    // Acquire the graph lock to ensure thread-safe access
+    acquire(&Graph.lock);
+
+    // Create a target node for the resource
+    Node resourceTarget = {Resource_ID, RESOURCE, 0};
+
+    // Find the resource node
+    Node* resourceNode = findNode(&resourceTarget);
+    if (resourceNode == 0) {
+        release(&Graph.lock);
+        cprintf("Thread %d: Resource %d does not exist\n", tid, Resource_ID);
+        return -1; // Resource not found
+    }
+
+    // Check if the resource is acquired by the current thread
+    if (Graph.adjList[resourceNode->vertex]->vertex != tid) {
+        release(&Graph.lock);
+        cprintf("Thread %d does not hold resource %d\n", tid, Resource_ID);
+        return -1; // Resource not held by the thread
+    }
+
+    // Get the resource metadata
+    Resource* resources = (Resource*)(adjListPage + 2048);  // Resource metadata starts at offset 2048
+    Resource* resource = &resources[Resource_ID];
+
+    // Check if the offset and size are valid
+    if (offset < 0 || size < 0 || offset + size > 2048 / NRESOURCE) {
+        release(&Graph.lock);
+        cprintf("Thread %d: Invalid offset or size for resource %d\n", tid, Resource_ID);
+        return -1; // Invalid offset or size
+    }
+
+    // Copy data from user buffer to resource memory
+    if (copyin(curproc->pgdir, resource->startaddr + offset, buffer, size) < 0) {
+        release(&Graph.lock);
+        cprintf("Thread %d: Failed to write to resource %d\n", tid, Resource_ID);
+        return -1; // Failed to copy data
+    }
+
+    // Release the graph lock
+    release(&Graph.lock);
+
+    cprintf("Thread %d successfully wrote to resource %d\n", tid, Resource_ID);
+    return 0; // Write successful
 }
-int readresource(int Resource_ID,int offset, int size,void* buffer)
-{
-//################ADD Your Implementation Here######################
 
-//##################################################################
-  return -1;
+int readresource(int Resource_ID, int offset, int size, void* buffer) {
+    struct proc* curproc = myproc();
+    int tid = curproc->tid;
+
+    acquire(&Graph.lock);
+
+    Node resourceTarget = {Resource_ID, RESOURCE, 0};
+
+    Node* resourceNode = findNode(&resourceTarget);
+    if (resourceNode == 0) {
+        release(&Graph.lock);
+        cprintf("Thread %d: Resource %d does not exist\n", tid, Resource_ID);
+        return -1; 
+    }
+
+    // Check if the resource is acquired by the current thread
+    if (Graph.adjList[resourceNode->vertex]->vertex != tid) {
+        release(&Graph.lock);
+        cprintf("Thread %d does not hold resource %d\n", tid, Resource_ID);
+        return -1; // Resource not held by the thread
+    }
+
+    // Get the resource metadata
+    Resource* resources = (Resource*)(adjListPage + 2048);  // Resource metadata starts at offset 2048
+    Resource* resource = &resources[Resource_ID];
+
+    // Check if the offset and size are valid
+    if (offset < 0 || size < 0 || offset + size > 2048 / NRESOURCE) {
+        release(&Graph.lock);
+        cprintf("Thread %d: Invalid offset or size for resource %d\n", tid, Resource_ID);
+        return -1; // Invalid offset or size
+    }
+
+    // Copy data from resource memory to user buffer
+    if (copyout(curproc->pgdir, buffer, resource->startaddr + offset, size) < 0) {
+        release(&Graph.lock);
+        cprintf("Thread %d: Failed to read from resource %d\n", tid, Resource_ID);
+        return -1; // Failed to copy data
+    }
+
+    // Release the graph lock
+    release(&Graph.lock);
+
+    cprintf("Thread %d successfully read from resource %d\n", tid, Resource_ID);
+    return 0; // Read successful
 }

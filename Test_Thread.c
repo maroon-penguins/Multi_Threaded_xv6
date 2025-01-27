@@ -9,6 +9,7 @@ void function(void* arg1,void* arg2){
     Lock_Release(&My_Lock);
     exit();
 }
+
 int main(){
     void* x=0;
     printf(0,"i am here\n");
