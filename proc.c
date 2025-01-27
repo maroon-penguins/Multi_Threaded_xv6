@@ -114,26 +114,6 @@ Node* findNode(Node* target) {
       // cprintf("the node vertex is %d \n", node->vertex);
       node++;
     }
-    return 0;
-
-    int maxNodes = PGSIZE / sizeof(Node);
-    
-
-    for (int i = 0; i < maxNodes; i++) {
-        if (node[i].vertex == -1) {
-            break;
-        }
-        
-        // Only compare vertex and type, not the next pointer
-        if (node[i].vertex == target->vertex && 
-            node[i].type == target->type) {
-            cprintf("Node Found %d  Type :%s\n", node->vertex,node->type == RESOURCE ? "RESOURCE" : "PROCESS");
-            return &node[i];
-        }
-    }
-
-
-    cprintf("Node NOT Found\n");
 
     // Node not found
     return 0;
