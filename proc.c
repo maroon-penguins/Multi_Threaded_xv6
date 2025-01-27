@@ -12,318 +12,106 @@ struct {
   struct proc proc[NPROC];
 } ptable;
 
-
-void* adjListPage;  // Pointer to the allocated kernel page for the adjacency list
-
 typedef struct Node {
     int vertex;
     enum nodetype type;
     struct Node* next;
 } Node;
-struct {
+struct Graph {
   struct spinlock lock;
   Node* adjList[MAXTHREAD+NRESOURCE];
   int visited[MAXTHREAD+NRESOURCE];
   int recStack[MAXTHREAD+NRESOURCE];
-} Graph;
+} ;
 //################ADD Your Implementation Here######################
-
-// Function to initialize the graph
-void initializeGraph() {
-    // Allocate a kernel page for the adjacency list
-    adjListPage = kalloc();
-    
-    if (adjListPage == 0) {
-      panic("initializeGraph: kalloc failed");
-    }
-    memset(adjListPage, -1, PGSIZE);
-
-
-    // Initialize the adjacency list and metadata
-    for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
-        Graph.adjList[i] = 0;  // Set all pointers to NULL
-        Graph.visited[i] = 0;  // Mark all nodes as unvisited
-        Graph.recStack[i] = 0; // Initialize recursion stack
-    }
-
-    // Initialize the spinlock
-    initlock(&Graph.lock, "graph_lock");
-}
-
-
-// // Function to get a free node slot
-// Node* getUnusedNode() {
-//     Node* nodes = (Node*)adjListPage;
-//     int maxNodes = PGSIZE / sizeof(Node);
-    
-//     for (int i = 0; i < maxNodes; i++) {
-//         if (nodes[i].vertex == -1) {
-//             return &nodes[i];
-//         }
-//     }
-//     return 0;  // No free slots available
-// }
+struct Graph* graph;
 
 void addResourceNode(int resource_id) {
-    // acquire(&Graph.lock);  // Acquire the graph lock for thread safety
+  Node* newNode = (Node*)kalloc();
 
-    Node* newNode = (Node*)adjListPage;
-    if (newNode == 0) {
-        cprintf("Failed to allocate resource node: no free space\n");
-        return;
-    }
+  newNode->vertex = resource_id;
+  newNode->type = RESOURCE;
+  newNode->next = 0;
 
-    int counter = -1 ; 
-    int limit = 2 * (RESOURCE + MAXTHREAD);
+  graph->adjList[resource_id] = newNode;
 
-    while(counter++ < limit)
-    {
-      if(newNode ->vertex == -1)
-      {
-        newNode->vertex = resource_id;
-        newNode->type = RESOURCE;
-        newNode->next = 0;
-        Graph.adjList[resource_id] = 0;
-        cprintf("Node created for resource %d succesfully\n", resource_id);
-        break;
-      }
-      newNode++;
-    }
-
-
-    cprintf("Added resource node %d failed succesfully\n", resource_id);
-
-    // release(&Graph.lock);  // Release the graph lock
+  cprintf("Added resource node %d successfully\n", resource_id);
 }
 
-// Function to find a node with a specific vertex in adjListPage
-Node* findNode(Node* target) {
-
-    Node* node = (Node*)adjListPage;
-
-    int limit = 2* (NRESOURCE + MAXTHREAD);
-    int counter =-1; 
-    while(counter++<limit)
-    {
-      if (node->vertex == target->vertex && node->type == target->type) 
-      {
-        cprintf("Node Found %d  Type :%s\n", node->vertex,node->type == RESOURCE ? "RESOURCE" : "PROCESS");
-        return node;
-      }
-      // cprintf("Node not Found %d  Type :%s\n", node->vertex,node->type == RESOURCE ? "RESOURCE" : "PROCESS");
-      // cprintf("the node vertex is %d \n", node->vertex);
-      node++;
-    }
-
-    // Node not found
-    return 0;
-}
-
-// Function to add a thread node to the graph
 void addThreadNode(int tid) {
-    Node* newNode = (Node*)adjListPage;
-    if (newNode == 0) {
-        cprintf("Failed to allocate thread node: no free space\n");
-        return;
-    }
-
-    int counter = -1 ; 
-    int limit = 2 * (RESOURCE + MAXTHREAD);
-
-    while(counter++ < limit)
-    {
-      if(newNode ->vertex == -1)
-      {
-        newNode->vertex = tid;
-        newNode->type = PROCESS;
-        newNode->next = 0;
-        Graph.adjList[NRESOURCE+tid] = 0;
-        cprintf("Node created for thread succesfully\n", tid);
-        break;
-      }
-      newNode++;
-    }
-
-    cprintf("Node dont created for thread %d\n", tid);
-
-    // Add the node to the end of the linked list for the thread partition
-
-    // release(&Graph.lock);  // Release the graph lock
-}
-
-// Function to remove an edge from the graph
-void removeEdge(Node* src, Node* dest) {
-    // acquire(&Graph.lock);  // Acquire the graph lock for thread safety
-
-    Node* temp = Graph.adjList[src->vertex];
-    // Traverse the linked list to find the node to remove
-    if (temp != 0) {
-        if (temp->vertex == dest->vertex) {
-            // Remove the node from the linked list
-            Graph.adjList[src->vertex] = 0;  // Update the head pointer
-        }
-    }
-
-    if(src->type == RESOURCE)
-    {
-      Resource* resources = (Resource*)(adjListPage + 2048);  // Resource metadata starts at offset 2048
-      resources[src->vertex].acquired = -1;  // Mark the resource as free
-      cprintf("Resource %d released by thread %d\n", src->vertex, dest->vertex);
-    }
-    // release(&Graph.lock);  // Release the graph lock
-}
-
-
-//this func need to be change
-void removeThreadNode(int tid) {
-    // acquire(&Graph.lock);  // Acquire the graph lock for thread safety
-
-    // Remove the thread node from the adjacency list
+    Node* newNode = (Node*)kalloc();
     
-    Node* node = (Node*)adjListPage;
-    for (int i = 0; i < (PGSIZE / sizeof(Node)); i++) {
-        if (node->vertex == tid) {
-            // Mark the node as unused
-            node->vertex = 0;  // Reset the vertex ID to indicate the node is unused
-            node->next = 0;    // Reset the next pointer
+    
+    newNode->vertex = tid;
+    newNode->type = PROCESS;
+    newNode->next = 0;
+  
+    graph->adjList[NRESOURCE + tid] = newNode;
 
-            // Debug print
-            cprintf("Removed and marked thread node for thread %d as unused\n", tid);
-            break;  // Exit the loop once the node is found and marked
-        }
-        node++;  // Move to the next node in adjListPage
-    }
+    cprintf("Node created for thread %d\n", tid);
+}
 
-    Node* temp = Graph.adjList[tid];
-
-    // Traverse the linked list to find the node to remove
-    if (temp != 0) {
-        // Mark the node as unused in adjListPage
-        temp->vertex = 0;  // Reset the vertex ID to indicate the node is unused
-        temp->next = 0;    // Reset the next pointer
-
-        // Update the adjacency list for the thread
-        Graph.adjList[tid] = 0;  // Set the adjacency list for the thread to NULL
+void initializeGraph(void) {
+    void* page = kalloc();
+    graph = (struct Graph*)page;
+    
+    initlock(&graph->lock, "graph_lock");
+    
+    for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
+        graph->adjList[i] = 0;
+        graph->visited[i] = 0;
+        graph->recStack[i] = 0;
     }
     
-    Node threadTarget = {tid, PROCESS, 0};   // Thread node
-    Node* threadNode = findNode(&threadTarget);
-
-
-    for (int i = NRESOURCE; i < MAXTHREAD + NRESOURCE; i++) {
-        if (Graph.adjList[i] != 0 && Graph.adjList[i]->vertex == tid) {
-            Node resourceTarget = {i, RESOURCE, 0};  // Resource node
-            Node* resourceNode = findNode(&resourceTarget);
-
-            if (resourceNode != 0 && threadNode != 0) {
-                removeEdge(resourceNode, threadNode);
-
-                // Mark the resource as free
-                Resource* resources = (Resource*)(adjListPage + 2048);  // Resource metadata starts at offset 2048
-                resources[i - NRESOURCE].acquired = -1;  // Mark the resource as free
-                cprintf("Resource %d released by thread %d\n", i, tid);
-            }
-        }
-    }
-
-    // release(&Graph.lock);  // Release the graph lock
 }
 
-int addEdge(Node* srcNode, Node* destNode) {
 
-    // acquire(&Graph.lock);  // Acquire the graph lock for thread safety
-
-    // // Find the destination node in adjListPage
-    // Node* destNode = findNode(dest);
-    // if (destNode == 0) {
-    //     // If the destination node does not exist, return (we cannot add an edge to a non-existent node)
-    //     // release(&Graph.lock);
-    //     return;
-    // }
-
-    // // Check the type of the source node
-    // Node* srcNode = findNode(src);
-    // if (srcNode == 0) {
-    //     // If the source node does not exist, return (we cannot add an edge from a non-existent node)
-    //     // release(&Graph.lock);
-    //     return;
-    // }
-
-    // If the source node is a RESOURCE, ensure it has no outgoing edges
-    if (srcNode->type == RESOURCE) {
-        if (Graph.adjList[srcNode->vertex] != 0) {
-            cprintf("resource is already in use \n");
-            // Resource already has an outgoing edge, so we cannot add another one
-            // release(&Graph.lock);
-            return -1;
-        }
-        else
-        {
-          Graph.adjList[srcNode->vertex]=destNode;
-        }
+int dfs(int vertex)
+{
+  graph->visited[vertex] = 1;
+  graph->recStack[vertex] = 1;
+  
+  Node* temp = graph->adjList[vertex];
+  while (temp != 0 && temp->next != 0)  // Check both temp and temp->next
+  {
+    int adjacent = temp->next->vertex;
+    
+    if (!graph->visited[adjacent]) {
+      if (dfs(adjacent))
+        return 1;
     }
-
-    if(srcNode->type == RESOURCE)
-    {
-      // If the edge is from a resource to a thread, mark the resource as acquired
-      Resource* resources = (Resource*)(adjListPage + 2048);  // Resource metadata starts at offset 2048
-      resources[srcNode->vertex].acquired = 1;  // Mark the resource as acquired
-      cprintf("i add the resource to the thread \n");
-      // cprintf("Resource %d is marked as acquired (edge from resource to thread)\n", src);
+    else if (graph->recStack[adjacent])
       return 1;
-    }
-
-    // Debug print
-    // Add the destination node to the adjacency list of the source vertex
-    // destNode->next = Graph.adjList[src];  // Insert at the head of the linked list
-    Graph.adjList[srcNode->vertex+NRESOURCE] = destNode;        // Update the head pointer
-    cprintf("source %d now point to dest %d \n",srcNode->vertex,Graph.adjList[srcNode->vertex + NRESOURCE]->vertex);
-    return 1;
-    // release(&Graph.lock);  // Release the graph lock
+        
+    temp = temp->next;
+  }
+  
+  graph->recStack[vertex] = 0;
+  return 0;
 }
 
-// Recursive DFS function to detect cycles
-int isCyclicUtil(int v) {
-    if (!Graph.visited[v]) {
-        Graph.visited[v] = 1;
-        Graph.recStack[v] = 1;
 
-        // Traverse the adjacency list of the current node
-        Node* temp = Graph.adjList[v];
-        while (temp != 0) {
-            if (!Graph.visited[temp->vertex] && isCyclicUtil(temp->vertex))
-                return 1;  // Cycle detected
-            else if (Graph.recStack[temp->vertex])
-                return 1;  // Cycle detected
-            temp = temp->next;
-        }
+int hasCycle()
+{
+  for (int i = 0; i < MAXTHREAD + NRESOURCE; i++)
+  {
+    graph->visited[i] = 0;
+    graph->recStack[i] = 0;
+  }
+  
+  for (int i = 0; i < MAXTHREAD + NRESOURCE; i++)
+  {
+    if (!graph->visited[i]) 
+    {
+        if (dfs(i))
+            return 1;
     }
-    Graph.recStack[v] = 0;  // Remove the node from the recursion stack
-    return 0;  // No cycle detected
+  }
+  return 0;
 }
 
-// Function to detect deadlocks
-int isCyclic() {
-    // acquire(&Graph.lock);  // Acquire the graph lock for thread safety
 
-    // Reset visited and recStack arrays
-    for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
-        Graph.visited[i] = 0;
-        Graph.recStack[i] = 0;
-    }
 
-    // Perform DFS on each node
-    int result = 0;
-    for (int i = 0; i < MAXTHREAD + NRESOURCE; i++) {
-        if (isCyclicUtil(i)) {
-            result = 1;  // Cycle detected
-            break;
-        }
-    }
-
-    // release(&Graph.lock);  // Release the graph lock
-    return result;
-}
 
 //##################################################################
 
@@ -433,6 +221,8 @@ found:
   return p;
 }
 
+Resource* resources;
+
 //PAGEBREAK: 32
 // Set up first user process.
 void
@@ -467,27 +257,27 @@ userinit(void)
 //################ADD Your Implementation Here######################
 
 
-      //Resource page handling and creation
-      
 
-    void* page = kalloc();
-    Resource* resources = (Resource*) page;
-    void* bufferStart = page + 2048;
+  void* page = kalloc();
+  resources = (Resource*) page;
+  void* bufferStart = page + 2048;
 
-    for (int i = 0; i < NRESOURCE; i++)
-    {
+  // Initialize resource metadata
+  for (int i = 0; i < NRESOURCE; i++) {
       resources[i].resourceid = i;
       resources[i].name[0] = '0' + i;
       resources[i].acquired = -1;
       resources[i].startaddr = bufferStart + i * (2048 / NRESOURCE);
-    }
-    initializeGraph();
-    for(int i =0 ; i<NRESOURCE ; i++)
-    {
-      addResourceNode(i);
-    }
-    addThreadNode(0);
-    
+
+  }
+
+  initializeGraph();
+
+
+  for(int i = 0; i < NRESOURCE; i++)
+    addResourceNode(i);
+  
+
 
 //##################################################################
   acquire(&ptable.lock);
@@ -495,7 +285,6 @@ userinit(void)
   p->state = RUNNABLE;
 
   release(&ptable.lock);
-  cprintf("i done this part\n");
 }
 
 // Grow current process's memory by n bytes.
@@ -914,58 +703,58 @@ int clone(void (*worker)(void*,void*),void* arg1,void* arg2,void* stack)
   acquire(&ptable.lock);
   New_Thread->state=RUNNABLE;
   release(&ptable.lock);
-  //add node of new thread to graph
-  addThreadNode(New_Thread->tid);
-  cprintf("Cloned successfully\n");
-
   //cprintf("process running Clone has  %d threads\n",curproc->Thread_Num);  
+
+  addThreadNode(New_Thread->tid);
   return New_Thread->tid;
 }
-int join(int Thread_id) {
-    struct proc *p, *curproc = myproc();
-    int Join_Thread_Exit = 0, jtid;
-    if (Thread_id == 0)
-        return -1;
-    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-        if (p->tid == Thread_id && p->parent == curproc) {
-            Join_Thread_Exit = 1;
-            break;
-        }
+int join(int Thread_id)
+{
+  struct proc  *p,*curproc=myproc();
+  int Join_Thread_Exit=0,jtid;
+  if(Thread_id==0)
+     return -1;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->tid == Thread_id && p->parent == curproc) {
+      Join_Thread_Exit=1; 
+      break;
     }
-    if (!Join_Thread_Exit || curproc->killed) {
-        return -1;
+  }
+  if(!Join_Thread_Exit || curproc->killed){
+    //cprintf("Herere");
+    return -1;
+  }  
+  acquire(&ptable.lock);
+  for(;;){
+    // thread is killed by some other thread in group
+    //cprintf("I am waiting\n");
+    if(curproc->killed){
+      release(&ptable.lock);
+      return -1;
     }
+    if(p->state == ZOMBIE){
+      // Found the thread 
+      curproc->Thread_Num--;
+      jtid = p->tid;
+      kfree(p->kstack);
+      p->kstack = 0;
+      p->pgdir = 0;
+      p->pid = 0;
+      p->tid = 0;
+      p->tstack = 0;
+      p->parent = 0;
+      p->name[0] = 0;
+      p->killed = 0;
+      p->state = UNUSED;
+      release(&ptable.lock);
+      //cprintf("Parent has  %d threads\n",curproc->Thread_Num);
+      return jtid;
+    } 
 
-    acquire(&ptable.lock);
-    for (;;) {
-        if (curproc->killed) {
-            release(&ptable.lock);
-            return -1;
-        }
-        if (p->state == ZOMBIE) {
-            //remove the related node of thread in the graph
-            cprintf("i am in the join part to test \n");
-            removeThreadNode(Thread_id);
-            cprintf("also did this \n");
-
-            curproc->Thread_Num--;
-            jtid = p->tid;
-            kfree(p->kstack);
-            p->kstack = 0;
-            p->pgdir = 0;
-            p->pid = 0;
-            p->tid = 0;
-            p->tstack = 0;
-            p->parent = 0;
-            p->name[0] = 0;
-            p->killed = 0;
-            p->state = UNUSED;
-            release(&ptable.lock);
-            return jtid;
-        }
-        sleep(curproc, &ptable.lock);
-    }
-    return 0;
+    sleep(curproc, &ptable.lock);  
+  }     
+  //curproc->Thread_Num--;
+  return 0;
 }
 
 //PAGEBREAK: 36
@@ -1006,206 +795,125 @@ procdump(void)
 }
 
 int requestresource(int Resource_ID) {
-    struct proc* curproc = myproc();
-    int tid = curproc->tid;
-
-    // Acquire the graph lock to ensure thread-safe access
-    acquire(&Graph.lock);
-
-    // Create a target node for the resource
-    Node resourceTarget = {Resource_ID, RESOURCE, 0};
-
-    cprintf("i am before search \n");
-    // Find the resource node
-    Node* resourceNode = findNode(&resourceTarget);
-    if (resourceNode == 0) {
-        release(&Graph.lock);
-        cprintf("Thread %d: Resource %d does not exist\n", tid, Resource_ID);
-        return -1; // Resource not found
-    }
-
-    // Create a target node for the thread
-    Node threadTarget = {tid, PROCESS, 0};
-
-    // Find the thread node
-    Node* threadNode = findNode(&threadTarget);
-    if (threadNode == 0) {
-        release(&Graph.lock);
-        cprintf("Thread %d: Thread node does not exist\n", tid);
-        return -1; // Thread node not found
-    }
-
-    cprintf("i am before adding edge \n");
-    // Add an edge from the thread to the resource (request edge)
-    int check =addEdge(threadNode, resourceNode);
-
-    if(check)
-    {
-      // cprintf("i am before cycle check edge \n");
-      // Check for deadlock using DFS
-      if (isCyclic()) {
-          // Deadlock detected, remove the edge and return an error
-          removeEdge(threadNode, resourceNode);
-          release(&Graph.lock);
-          cprintf("Thread %d failed to acquire resource %d (deadlock detected)\n", tid, Resource_ID);
-          return -1; // Deadlock detected
-      }
-
-
-      //we dont have cycle so we can have the resource
-      removeEdge(threadNode,resourceNode);
-      addEdge(resourceNode,threadNode);
-
-      // No deadlock detected, allow the resource request
-      release(&Graph.lock);
-      cprintf("Thread %d successfully acquired resource %d\n", tid, Resource_ID);
-      return 0; // Resource requested successfully
-    }
-    release(&Graph.lock);
+  struct proc *curproc = myproc();
+  if (Resource_ID < 0 || Resource_ID >= NRESOURCE || curproc->tid == 0)
     return -1;
-}
 
+  int tid = curproc->tid;
+  
+  acquire(&graph->lock);
+  
+  Node* theThread = graph->adjList[NRESOURCE + tid];
+  Node* theResource = graph->adjList[Resource_ID];
+  
+  if (!theThread || !theResource) {
+    release(&graph->lock);
+    return -1;
+  }
+
+  if (theResource->next != 0)    // Resource in use, add request edge
+  {
+    Node* newEdge = (Node*)kalloc();
+    if (!newEdge) {
+      release(&graph->lock);
+      return -1;
+    }
+    newEdge->vertex = Resource_ID;
+    newEdge->type = RESOURCE;
+    newEdge->next = 0;
+
+    Node* temp = theThread;
+    while (temp->next != 0)
+      temp = temp->next;
+    temp->next = newEdge;
+  }
+  else    // Resource free, add allocation edge
+  {
+    theResource->next = theThread;
+    resources[Resource_ID].acquired = tid;
+  }
+
+  int hasCycleResult = hasCycle();
+  if (hasCycleResult) {
+    cprintf("Deadlock detecteddddddddd\n");
+    cprintf("Deadlock detecteddddddddd\n");
+    cprintf("Deadlock detecteddddddddd\n");
+  }
+
+  release(&graph->lock);
+  return 1;
+}
 
 int releaseresource(int Resource_ID) {
-    struct proc* curproc = myproc();
-    int tid = curproc->tid;
+  struct proc *curproc = myproc();
+  if (Resource_ID < 0 || Resource_ID >= NRESOURCE || curproc->tid == 0)
+    return -1;
 
-    // Acquire the graph lock to ensure thread-safe access
-    acquire(&Graph.lock);
+  int tid = curproc->tid;
+  
+  acquire(&graph->lock);
+  
+  Node* theResource = graph->adjList[Resource_ID];
+  if (!theResource || resources[Resource_ID].acquired != tid) {
+    release(&graph->lock);
+    return -1;
+  }
 
-    // Create a target node for the resource
-    Node resourceTarget = {Resource_ID, RESOURCE, 0};
-
-    // Find the resource node
-    Node* resourceNode = findNode(&resourceTarget);
-    if (resourceNode == 0) {
-        release(&Graph.lock);
-        cprintf("Thread %d: Resource %d does not exist\n", tid, Resource_ID);
-        return -1; // Resource not found
-    }
-
-    // Create a target node for the thread
-    Node threadTarget = {tid, PROCESS, 0};
-
-    // Find the thread node
-    Node* threadNode = findNode(&threadTarget);
-    if (threadNode == 0) {
-        release(&Graph.lock);
-        cprintf("Thread %d: Thread node does not exist\n", tid);
-        return -1; // Thread node not found
-    }
-
-    // Check if the edge exists
-    cprintf("thread : %d resource %d \n", threadNode->vertex , Graph.adjList[resourceNode->vertex]->vertex);
-    if ( Graph.adjList[resourceNode->vertex]->vertex != threadNode->vertex ) {
-        release(&Graph.lock);
-        cprintf("Thread %d does not hold resource %d\n", tid, Resource_ID);
-        return -1; // Edge does not exist
-    }
-
-    // Remove the edge from the thread to the resource
-    removeEdge(resourceNode, threadNode);
-
-    // Release the graph lock
-    release(&Graph.lock);
-
-    cprintf("Thread %d successfully released resource %d\n", tid, Resource_ID);
-    return 0; // Resource released successfully
+  theResource->next = 0;
+  resources[Resource_ID].acquired = -1;
+  
+  release(&graph->lock);
+  return 1;
 }
+int writeresource(int Resource_ID,void* buffer,int offset, int size)
+{
+//################ADD Your Implementation Here######################
 
-int writeresource(int Resource_ID, void* buffer, int offset, int size) {
-    struct proc* curproc = myproc();
-    int tid = curproc->tid;
+  if (Resource_ID < 0 || Resource_ID >= NRESOURCE || !buffer || offset < 0 || size < 0)
+      return -1;
+      
+  struct proc *curproc = myproc();
+  if (curproc->tid == 0 || resources[Resource_ID].acquired != curproc->tid)
+      return -1;
+      
+  if (offset + size > 2048 / NRESOURCE)  // Check if write exceeds resource size
+      return -1;
+      
+  acquire(&graph->lock);
+  memmove(resources[Resource_ID].startaddr + offset, buffer, size);
+  release(&graph->lock);
+  
+  return size;
 
-    // Acquire the graph lock to ensure thread-safe access
-    acquire(&Graph.lock);
 
-    // Create a target node for the resource
-    Node resourceTarget = {Resource_ID, RESOURCE, 0};
-
-    // Find the resource node
-    Node* resourceNode = findNode(&resourceTarget);
-    if (resourceNode == 0) {
-        release(&Graph.lock);
-        cprintf("Thread %d: Resource %d does not exist\n", tid, Resource_ID);
-        return -1; // Resource not found
-    }
-
-    // Check if the resource is acquired by the current thread
-    if (Graph.adjList[resourceNode->vertex]->vertex != tid) {
-        release(&Graph.lock);
-        cprintf("Thread %d does not hold resource %d\n", tid, Resource_ID);
-        return -1; // Resource not held by the thread
-    }
-
-    // Get the resource metadata
-    Resource* resources = (Resource*)(adjListPage + 2048);  // Resource metadata starts at offset 2048
-    Resource* resource = &resources[Resource_ID];
-
-    // Check if the offset and size are valid
-    if (offset < 0 || size < 0 || offset + size > 2048 / NRESOURCE) {
-        release(&Graph.lock);
-        cprintf("Thread %d: Invalid offset or size for resource %d\n", tid, Resource_ID);
-        return -1; // Invalid offset or size
-    }
-
-    // Copy data from user buffer to resource memory
-    if (copyin(curproc->pgdir, resource->startaddr + offset, buffer, size) < 0) {
-        release(&Graph.lock);
-        cprintf("Thread %d: Failed to write to resource %d\n", tid, Resource_ID);
-        return -1; // Failed to copy data
-    }
-
-    // Release the graph lock
-    release(&Graph.lock);
-
-    cprintf("Thread %d successfully wrote to resource %d\n", tid, Resource_ID);
-    return 0; // Write successful
+//##################################################################
+  // return -1;
 }
+int readresource(int Resource_ID,int offset, int size,void* buffer)
+{
+//################ADD Your Implementation Here######################
 
-int readresource(int Resource_ID, int offset, int size, void* buffer) {
-    struct proc* curproc = myproc();
-    int tid = curproc->tid;
+  if (Resource_ID < 0 || Resource_ID >= NRESOURCE || !buffer || offset < 0 || size < 0)
+    return -1;
+      
+  // cprintf("Reached here");
+    
+  struct proc *curproc = myproc();
+  if (curproc->tid == 0 || resources[Resource_ID].acquired != curproc->tid)
+      return -1;
+      
 
-    acquire(&Graph.lock);
+  // cprintf("Reached here");
 
-    Node resourceTarget = {Resource_ID, RESOURCE, 0};
+  if (offset + size > 2048 / NRESOURCE)
+      return -1;
+      
+  acquire(&graph->lock);
+  memmove(buffer, resources[Resource_ID].startaddr + offset, size);
+  release(&graph->lock);
+  
+  return size;
 
-    Node* resourceNode = findNode(&resourceTarget);
-    if (resourceNode == 0) {
-        release(&Graph.lock);
-        cprintf("Thread %d: Resource %d does not exist\n", tid, Resource_ID);
-        return -1; 
-    }
-
-    // Check if the resource is acquired by the current thread
-    if (Graph.adjList[resourceNode->vertex]->vertex != tid) {
-        release(&Graph.lock);
-        cprintf("Thread %d does not hold resource %d\n", tid, Resource_ID);
-        return -1; // Resource not held by the thread
-    }
-
-    // Get the resource metadata
-    Resource* resources = (Resource*)(adjListPage + 2048);  // Resource metadata starts at offset 2048
-    Resource* resource = &resources[Resource_ID];
-
-    // Check if the offset and size are valid
-    if (offset < 0 || size < 0 || offset + size > 2048 / NRESOURCE) {
-        release(&Graph.lock);
-        cprintf("Thread %d: Invalid offset or size for resource %d\n", tid, Resource_ID);
-        return -1; // Invalid offset or size
-    }
-
-    // Copy data from resource memory to user buffer
-    if (copyout(curproc->pgdir, buffer, resource->startaddr + offset, size) < 0) {
-        release(&Graph.lock);
-        cprintf("Thread %d: Failed to read from resource %d\n", tid, Resource_ID);
-        return -1; // Failed to copy data
-    }
-
-    // Release the graph lock
-    release(&Graph.lock);
-
-    cprintf("Thread %d successfully read from resource %d\n", tid, Resource_ID);
-    return 0; // Read successful
+//##################################################################
+  // return -1;
 }
